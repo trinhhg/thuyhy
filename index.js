@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & STATE ===
-  const STORAGE_KEY = 'trinh_hg_settings_v9'; 
-  const INPUT_STATE_KEY = 'trinh_hg_input_state_v9';
+  const STORAGE_KEY = 'trinh_hg_settings_v10'; // KEY MỚI
+  const INPUT_STATE_KEY = 'trinh_hg_input_state_v10';
 
   const defaultState = {
     currentMode: 'default',
@@ -70,7 +70,6 @@ document.addEventListener('DOMContentLoaded', () => {
           textNodes.push(node);
       } else {
           for (let child of node.childNodes) {
-              // Quan trọng: Chỉ đi vào các node không phải là kết quả replace (span.replaced)
               if (child.nodeType === 1 && child.classList.contains('replaced')) continue; 
               textNodes = textNodes.concat(getTextNodes(child));
           }
@@ -78,9 +77,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return textNodes;
   }
 
-  // --- LOGIC THAY THẾ CHUẨN XÁC, KHÔNG TREO WEB (Đã tối ưu) ---
+  // --- LOGIC THAY THẾ CHUẨN XÁC VÀ VIẾT HOA ---
   function performReplaceAll() {
-      // Tắt nút để tránh click liên tục gây treo
       const replaceBtn = document.getElementById('replace-button');
       replaceBtn.disabled = true;
       replaceBtn.textContent = 'Đang xử lý...';
@@ -97,7 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let normalizedText = normalizeSmartQuotes(rawText);
       
       els.outputText.innerHTML = '';
-      els.outputText.innerText = normalizedText; // Gán văn bản đã chuẩn hóa
+      els.outputText.innerText = normalizedText; 
 
       let totalCount = 0;
 
@@ -105,9 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const rules = mode.pairs
         .filter(p => p.find)
         .map(p => ({
-            originalFind: p.find, // Giữ lại bản gốc để kiểm tra tính năng
-            normalizedFind: normalizeSmartQuotes(p.find), // Dùng bản đã chuẩn hóa để tìm
-            replace: normalizeSmartQuotes(p.replace || '') // Dùng bản đã chuẩn hóa để thay
+            normalizedFind: normalizeSmartQuotes(p.find), 
+            replace: normalizeSmartQuotes(p.replace || '') 
         }))
         .filter(p => p.normalizedFind.length > 0)
         .sort((a,b) => b.normalizedFind.length - a.normalizedFind.length);
@@ -115,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       rules.forEach(rule => {
           const findStr = rule.normalizedFind;
-          // Lặp lại việc tìm kiếm/thay thế trên DOM cho đến khi không tìm thấy nữa (Global Replace)
           while (true) {
               let foundInThisPass = false;
               const nodes = getTextNodes(els.outputText);
@@ -124,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                    const txt = node.nodeValue;
                    const searchIn = mode.matchCase ? txt : txt.toLowerCase();
                    const searchFor = mode.matchCase ? findStr : findStr.toLowerCase();
-                   const idx = searchIn.indexOf(searchFor);
+                   let idx = searchIn.indexOf(searchFor);
 
                    if (idx !== -1) {
                        // --- Check Whole word ---
@@ -132,17 +128,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             const before = idx > 0 ? txt[idx-1] : '';
                             const after = idx + findStr.length < txt.length ? txt[idx + findStr.length] : '';
                             const isWordChar = /[\p{L}\p{N}_]/u;
-                            // Nếu trước hoặc sau là ký tự chữ/số/gạch dưới => không phải whole word
                             if (isWordChar.test(before) || isWordChar.test(after)) {
                                 continue; 
                             }
                        }
 
-                       // --- Tính toán Capitalization (Viết hoa sau dấu chấm) ---
+                       // --- Tính toán Capitalization ---
                        let replacement = rule.replace;
                        const originalMatch = txt.substr(idx, findStr.length);
                        
-                       // 1. Giữ nguyên Case (ALL CAPS, Title Case) nếu Match Case Tắt
+                       // 1. Giữ nguyên Case (ALL CAPS, Title Case)
                        if (!mode.matchCase) {
                            if (originalMatch === originalMatch.toUpperCase() && originalMatch !== originalMatch.toLowerCase()) {
                                replacement = replacement.toUpperCase();
@@ -151,11 +146,14 @@ document.addEventListener('DOMContentLoaded', () => {
                            }
                        }
 
-                       // 2. Viết hoa sau dấu câu (FIX LỖI NÀY)
-                       const prefix = txt.substring(0, idx);
-                       // Regex sửa: Tìm dấu câu (., ?, !) sau đó là khoảng trắng (có thể 0 hoặc nhiều)
-                       // Nếu match, và replacement là chữ cái, thì viết hoa chữ cái đầu
-                       if (/(^|[\.\?\!])\s*$/.test(prefix) && replacement.length > 0) {
+                       // 2. Viết hoa sau dấu câu (FIX CHUẨN)
+                       const prefix = txt.substring(0, idx).trim(); // Lấy phần trước và trim khoảng trắng
+                       
+                       // Điều kiện 1: Đứng đầu đoạn/dòng (sau newline)
+                       // Điều kiện 2: Đứng sau dấu câu (.?!) và sau đó là 0 hoặc nhiều khoảng trắng
+                       const isStartOfSentence = prefix.length === 0 || /(^|[\.\?\!])\s*$/.test(prefix);
+
+                       if (isStartOfSentence && replacement.length > 0) {
                            if (/[a-zA-Z]/u.test(replacement.charAt(0))) {
                                 replacement = replacement.charAt(0).toUpperCase() + replacement.slice(1);
                            }
@@ -171,26 +169,22 @@ document.addEventListener('DOMContentLoaded', () => {
                        
                        totalCount++;
                        foundInThisPass = true;
-                       break; // Break node loop để quét lại DOM sau khi thay đổi
+                       break; 
                    }
               }
-              if (!foundInThisPass) break; // Thoát khỏi vòng lặp rule này nếu không tìm thấy nữa
+              if (!foundInThisPass) break; 
           }
       });
       
       // --- CẢI THIỆN UI SAU KHI XỬ LÝ ---
-      // 1. Tự động thêm dòng trắng giữa các đoạn văn bản trong output
-      // Note: Sử dụng innerText để lấy text thuần sau khi highlight
       const finalOutputText = els.outputText.innerText.split('\n').filter(p => p.trim()).join('\n\n');
       els.outputText.innerText = finalOutputText;
       
-      // 2. Xóa văn bản gốc
       els.inputText.value = '';
       
       updateCounters();
       saveTempInput();
       
-      // Cập nhật lại counter sau khi xóa Input Text
       document.getElementById('input-word-count').textContent = 'Words: 0'; 
       showNotification(`Đã thay thế ${totalCount} vị trí!`);
       
@@ -200,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return totalCount;
   }
 
-  // === UI MANIPULATION (Giữ nguyên trừ phần loadSettingsToUI) ===
+  // === UI MANIPULATION ===
   function renderModeSelect() {
     els.modeSelect.innerHTML = '';
     Object.keys(state.modes).sort().forEach(m => {
@@ -248,12 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
     checkEmptyState();
   }
 
-  // FIX: Tải lại cài đặt
   function loadSettingsToUI() {
     els.list.innerHTML = '';
     const mode = state.modes[state.currentMode];
     if (mode.pairs && mode.pairs.length > 0) {
-      // Dùng true để append (thêm vào cuối) nhằm giữ nguyên thứ tự cũ
       mode.pairs.forEach(p => addPairToUI(p.find, p.replace, true)); 
     }
     updateModeButtons();
@@ -276,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!silent) showNotification('Đã lưu cài đặt!', 'success');
   }
 
-  // === SPLIT LOGIC (Giữ nguyên) ===
+  // === SPLIT LOGIC ===
   function renderSplitOutputs(count) {
     els.splitWrapper.innerHTML = '';
     els.splitWrapper.style.gridTemplateColumns = `repeat(${Math.min(count, 4)}, 1fr)`;
@@ -366,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showNotification('Đã chia thành công!', 'success');
   }
 
-  // === EXPORT/IMPORT (FIX IMPORT) ===
+  // === EXPORT/IMPORT (FIX CSV LỖI TẠO MODE) ===
   function exportCSV() {
     saveCurrentPairsToState(true);
     let csvContent = "\uFEFFfind,replace,mode\n"; 
@@ -396,26 +388,48 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!lines[0].toLowerCase().includes('find,replace,mode')) return showNotification('File lỗi định dạng!', 'error');
         
         let count = 0;
+        let importedModeNames = new Set(); // Theo dõi các mode đã nhập
+        
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
             const cols = line.match(/(?:"[^"]*"|[^,"]*)+/g) || [];
 
             if (cols.length >= 3) {
+                // Đảm bảo loại bỏ dấu nháy kép và escape quotes
                 const find = cols[0].replace(/^"|"$/g, '').replace(/""/g, '"');
                 const replace = cols[1].replace(/^"|"$/g, '').replace(/""/g, '"');
                 const modeName = cols[2].replace(/^"|"$/g, '').replace(/""/g, '"');
                 
-                if (!state.modes[modeName]) state.modes[modeName] = { pairs: [], matchCase: false, wholeWord: false };
-                state.modes[modeName].pairs.push({ find, replace });
-                count++;
+                if (modeName && find) { // Yêu cầu modeName và find không rỗng
+                    if (!state.modes[modeName]) {
+                         // Khởi tạo mode nếu chưa tồn tại
+                        state.modes[modeName] = { pairs: [], matchCase: false, wholeWord: false };
+                    }
+                    
+                    // Thêm cặp mới vào mode
+                    state.modes[modeName].pairs.push({ find, replace });
+                    importedModeNames.add(modeName);
+                    count++;
+                }
             }
         }
         
-        // FIX: Gọi loadSettingsToUI() sau khi saveState() để cập nhật hiển thị
+        // Cập nhật state, mode select và giao diện
         saveState(); 
         renderModeSelect(); 
-        loadSettingsToUI(); // Tải lại giao diện Settings
+        
+        // Nếu mode hiện tại được nhập, tải lại UI cho mode đó
+        if (importedModeNames.has(state.currentMode)) {
+             loadSettingsToUI();
+        } else if (importedModeNames.size > 0) {
+             // Chuyển sang mode đầu tiên được nhập nếu không phải mode hiện tại
+             const firstImportedMode = importedModeNames.values().next().value;
+             state.currentMode = firstImportedMode;
+             saveState(); 
+             renderModeSelect(); 
+             loadSettingsToUI();
+        }
         
         if (count > 0) showNotification(`Đã nhập ${count} cặp!`);
         else showNotification('Không tìm thấy cặp thay thế nào hợp lệ trong file.', 'error');

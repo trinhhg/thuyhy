@@ -170,7 +170,7 @@ body {
   pointer-events: none;
 }
 
-/* HIGHLIGHT STYLE */
+/* HIGHLIGHT STYLE - FIXED */
 mark.hl-yellow {
   background-color: #facc15; /* Vàng */
   color: black;
@@ -178,6 +178,7 @@ mark.hl-yellow {
   padding: 0 2px;
   border-bottom: 2px solid #ca8a04;
   font-weight: 500;
+  display: inline; /* Quan trọng để không phá vỡ dòng */
 }
 
 .pane-footer { padding: 10px; border-top: 1px solid #e5e7eb; background: #f9fafb; }

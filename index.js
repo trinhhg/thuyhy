@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // === CONFIG & STATE ===
-  const STORAGE_KEY = 'trinh_hg_settings_v13_autocaps'; 
-  const INPUT_STATE_KEY = 'trinh_hg_input_state_v13';
+  const STORAGE_KEY = 'trinh_hg_settings_v14_fix'; 
+  const INPUT_STATE_KEY = 'trinh_hg_input_state_v14';
 
   const defaultState = {
     currentMode: 'default',
@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Buttons
     matchCaseBtn: document.getElementById('match-case'),
     wholeWordBtn: document.getElementById('whole-word'),
-    autoCapsBtn: document.getElementById('auto-caps'), // Nút mới
+    autoCapsBtn: document.getElementById('auto-caps'), 
     renameBtn: document.getElementById('rename-mode'),
     deleteBtn: document.getElementById('delete-mode'),
     emptyState: document.getElementById('empty-state')
@@ -57,14 +57,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3000);
   }
 
-  // --- HÀM CHUẨN HÓA CƠ BẢN ---
+  // --- HÀM CHUẨN HÓA (Xử lý cả Smart Quotes) ---
   function normalizeText(text) {
     if (typeof text !== 'string') return '';
     if (text.length === 0) return text;
     
-    // 1. Chuyển Double Quotes về "
+    // 1. Chuyển Double Quotes (Cong) về " (Thẳng)
     let normalized = text.replace(/["\u201C\u201D\u201E\u201F\u00AB\u00BB\u275D\u275E\u301D-\u301F\uFF02\u02DD]/g, '"');
-    // 2. Chuyển Single Quotes về '
+    // 2. Chuyển Single Quotes (Cong) về ' (Thẳng)
     normalized = normalized.replace(/['\u2018\u2019\u201A\u201B\u2039\u203A\u275B\u275C\u276E\u276F\uA78C\uFF07]/g, "'");
     // 3. Chuyển Non-breaking space về dấu cách thường
     normalized = normalized.replace(/\u00A0/g, ' ');
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return normalized;
   }
   
-  // Hàm lấy Text Nodes sạch để xử lý Replace
+  // Hàm lấy Text Nodes để Replace
   function getTextNodes(node) {
       let textNodes = [];
       if (node.nodeType === 3) {
@@ -86,19 +86,54 @@ document.addEventListener('DOMContentLoaded', () => {
       return textNodes;
   }
 
-  // --- HÀM AUTO CAPS (STEP 2) ---
-  function applyAutoCapsToHTML(htmlContent) {
-      // Regex này đảm bảo:
-      // 1. Không viết hoa bên trong thẻ HTML (skip tag attributes/names) bằng lookbehind (?<!<[^>]*)
-      // 2. Viết hoa ký tự đầu dòng (^\s*[a-zà-ỹ])
-      // 3. Viết hoa sau các dấu chấm câu + khoảng trắng/ngoặc ([.!?…]+["'“”‘’\(\[\s]*[a-zà-ỹ])
-      // 4. Hỗ trợ HTML entities cho dấu ngoặc kép (&quot;, &#39;)
-      
-      const pattern = /(?<!<[^>]*)((^\s*[a-zà-ỹ])|([\.!?…]+(?:[\s"'“”‘’\(\[]|&quot;|&#39;)*[a-zà-ỹ]))/gimu;
-      
-      return htmlContent.replace(pattern, (match) => {
-          return match.toUpperCase();
-      });
+  // --- HÀM AUTO CAPS MỚI (DÙNG DOM TRAVERSAL - KHÔNG DÙNG REGEX THÔ) ---
+  // Logic: Đi qua từng ký tự text, nếu gặp . ? ! \n thì bật cờ "pendingCap".
+  // Nếu gặp chữ cái khi cờ đang bật -> Viết hoa -> Tắt cờ.
+  function applyAutoCapsToDOM(rootNode) {
+      const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, null, false);
+      let node;
+      let pendingCap = true; // Mặc định đầu văn bản là đầu câu
+
+      while (node = walker.nextNode()) {
+          const text = node.nodeValue;
+          let newText = '';
+          let modified = false;
+
+          for (let i = 0; i < text.length; i++) {
+              const char = text[i];
+              
+              // 1. Kiểm tra dấu câu kết thúc câu
+              if (/[\.\?\!\n]/.test(char)) {
+                  pendingCap = true;
+                  newText += char;
+              } 
+              // 2. Nếu là khoảng trắng, giữ nguyên trạng thái pendingCap
+              else if (/\s/.test(char)) {
+                  newText += char;
+              }
+              // 3. Nếu là chữ cái
+              else if (/[a-zà-ỹ]/i.test(char)) {
+                  if (pendingCap) {
+                      newText += char.toUpperCase();
+                      pendingCap = false; // Đã viết hoa, tắt cờ
+                      modified = true;
+                  } else {
+                      newText += char;
+                  }
+              }
+              // 4. Các ký tự khác (ví dụ số, ngoặc...) -> PendingCap có thể vẫn giữ nguyên?
+              // Theo yêu cầu: chỉ sau . ? ! và xuống dòng. 
+              // Nếu gặp " (ngoặc kép) ngay sau dấu chấm -> vẫn phải chờ chữ cái để viết hoa.
+              else {
+                  newText += char;
+              }
+          }
+
+          // Cập nhật text node nếu có thay đổi
+          if (modified || text !== newText) {
+              node.nodeValue = newText;
+          }
+      }
   }
 
   // --- CORE REPLACE LOGIC ---
@@ -114,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return showNotification("Chưa có cặp thay thế nào!", "error");
       }
 
-      // --- STEP 1: REPLACE (Không quan tâm đầu câu, chỉ replace theo rule) ---
+      // 1. Lấy input và chuẩn hóa
       let rawText = els.inputText.value;
       let normalizedText = normalizeText(rawText);
       
@@ -124,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let totalCount = 0;
 
-      // Chuẩn hóa Rules
+      // 2. Chuẩn hóa Rules
       const rules = mode.pairs
         .filter(p => p.find)
         .map(p => ({
@@ -132,8 +167,9 @@ document.addEventListener('DOMContentLoaded', () => {
             replace: normalizeText(p.replace || '') 
         }))
         .filter(p => p.normalizedFind.length > 0)
-        .sort((a,b) => b.normalizedFind.length - a.normalizedFind.length); // Ưu tiên từ dài trước
+        .sort((a,b) => b.normalizedFind.length - a.normalizedFind.length);
 
+      // --- STEP 1: REPLACE ---
       rules.forEach(rule => {
           const findStr = rule.normalizedFind;
           let maxPasses = 2000;
@@ -150,21 +186,25 @@ document.addEventListener('DOMContentLoaded', () => {
                    let idx = searchIn.indexOf(searchFor);
 
                    if (idx !== -1) {
-                       // Check Whole word
+                       // Check Whole Word (Fix boundary)
                        if (mode.wholeWord) {
                             const before = idx > 0 ? txt[idx-1] : '';
                             const after = idx + findStr.length < txt.length ? txt[idx + findStr.length] : '';
+                            
+                            // Word Char: Chữ cái, số, gạch dưới. 
+                            // Dấu chấm câu, dấu cách, dấu hỏi LÀ BOUNDARY -> Cho phép replace
                             const isWordChar = /[\p{L}\p{N}_]/u;
+                            
+                            // Nếu ký tự trước/sau LÀ ký tự từ -> Bỏ qua (đây là một phần của từ khác)
                             if (isWordChar.test(before) || isWordChar.test(after)) {
                                 continue; 
                             }
                        }
 
-                       // Logic Replacement: Giữ nguyên logic Match Case cơ bản
                        let replacement = rule.replace;
                        const originalMatch = txt.substr(idx, findStr.length);
                        
-                       // Nếu không match case, cố gắng giữ format viết hoa của từ gốc (basic)
+                       // Match Case logic cơ bản (chỉ áp dụng nếu user tắt Match Case)
                        if (!mode.matchCase) {
                            if (originalMatch === originalMatch.toUpperCase() && originalMatch.length > 1) {
                                replacement = replacement.toUpperCase();
@@ -173,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                            }
                        }
 
-                       // DOM Modification
+                       // DOM Replace
                        const matchNode = node.splitText(idx);
                        matchNode.splitText(findStr.length);
                        
@@ -193,18 +233,16 @@ document.addEventListener('DOMContentLoaded', () => {
           }
       });
       
-      // --- STEP 2: AUTO CAPS (Xử lý hậu kỳ toàn bộ văn bản nếu được bật) ---
+      // --- STEP 2: AUTO CAPS (Xử lý DOM sau khi đã replace) ---
       if (mode.autoCaps) {
-          // Lấy HTML hiện tại (đã chứa các thẻ <mark>)
-          let currentHTML = els.outputText.innerHTML;
-          // Chạy hàm Regex thông minh để viết hoa mà không hỏng thẻ mark
-          let capitalizedHTML = applyAutoCapsToHTML(currentHTML);
-          // Gán ngược lại
-          els.outputText.innerHTML = capitalizedHTML;
+          applyAutoCapsToDOM(els.outputText);
       }
 
       updateCounters();
-      saveTempInput();
+      
+      // --- XÓA INPUT SAU KHI THÀNH CÔNG ---
+      els.inputText.value = ''; 
+      saveTempInput(); // Lưu trạng thái rỗng
       showNotification(`Đã thay thế ${totalCount} vị trí!`);
       
       replaceBtn.disabled = false;
@@ -233,16 +271,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const mode = state.modes[state.currentMode];
     if(mode) {
-        // Match Case
         els.matchCaseBtn.textContent = `Match Case: ${mode.matchCase ? 'BẬT' : 'Tắt'}`;
         els.matchCaseBtn.classList.toggle('active', mode.matchCase);
         
-        // Whole Word
         els.wholeWordBtn.textContent = `Whole Word: ${mode.wholeWord ? 'BẬT' : 'Tắt'}`;
         els.wholeWordBtn.classList.toggle('active', mode.wholeWord);
         
-        // Auto Caps (Mới)
-        // Nếu mode cũ chưa có property autoCaps, mặc định là false
         if (mode.autoCaps === undefined) mode.autoCaps = false;
         els.autoCapsBtn.textContent = `Auto Caps: ${mode.autoCaps ? 'BẬT' : 'Tắt'}`;
         els.autoCapsBtn.classList.toggle('active', mode.autoCaps);
@@ -327,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const replace = cols[1];
                 const modeName = cols[2] || 'default';
                 if (find) {
-                    // Khởi tạo mode nếu chưa có
                     if (!state.modes[modeName]) state.modes[modeName] = { pairs: [], matchCase: false, wholeWord: false, autoCaps: false };
                     state.modes[modeName].pairs.push({ find, replace });
                     importedModeNames.add(modeName);
@@ -363,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'settings_trinh_hg_v13.csv'; a.click();
+    a.href = url; a.download = 'settings_trinh_hg_v14.csv'; a.click();
   }
 
   // --- SPLIT LOGIC ---
@@ -397,6 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(cEl) cEl.textContent = 'Words: ' + countWords(el.value);
         }
     }
+    // Xóa Input sau khi chia
+    els.splitInput.value = '';
+    saveTempInput();
     showNotification('Đã chia xong!', 'success');
   }
 
@@ -444,7 +480,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle Event Listeners
     els.matchCaseBtn.onclick = () => { if(state.modes[state.currentMode]) { state.modes[state.currentMode].matchCase = !state.modes[state.currentMode].matchCase; saveState(); updateModeButtons(); }};
     els.wholeWordBtn.onclick = () => { if(state.modes[state.currentMode]) { state.modes[state.currentMode].wholeWord = !state.modes[state.currentMode].wholeWord; saveState(); updateModeButtons(); }};
-    // Auto Caps Event Listener
     els.autoCapsBtn.onclick = () => { if(state.modes[state.currentMode]) { state.modes[state.currentMode].autoCaps = !state.modes[state.currentMode].autoCaps; saveState(); updateModeButtons(); }};
     
     els.modeSelect.onchange = (e) => { state.currentMode = e.target.value; saveState(); loadSettingsToUI(); };

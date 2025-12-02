@@ -78,8 +78,16 @@ body {
 .btn-outline { background: white; border: 1px solid #d1d5db; color: #374151; }
 .btn-outline:hover { border-color: #9ca3af; background: #f9fafb; }
 
-.btn-toggle { background: #e5e7eb; color: #6b7280; width: 160px; justify-content: flex-start; }
+/* FIX: Nút toggle auto-fit content và có độ rộng tối thiểu */
+.btn-toggle { 
+  background: #e5e7eb; color: #6b7280; 
+  width: auto; /* Để fit với chữ */
+  min-width: 140px; /* Độ rộng tối thiểu để không bị quá ngắn */
+  padding: 8px 15px;
+  justify-content: flex-start; 
+}
 .btn-toggle.active { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+
 .hidden { display: none !important; }
 .full-width { width: 100%; }
 .icon-btn { min-width: 120px; }

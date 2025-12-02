@@ -127,7 +127,7 @@ body {
 .pane-header { padding: 10px 15px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; }
 .pane textarea { flex: 1; border: none; padding: 15px; resize: none; font-size: 15px; line-height: 1.6; font-family: inherit; color: #333; }
 
-/* === OUTPUT DIV (QUAN TRỌNG CHO HIGHLIGHT) === */
+/* === OUTPUT DIV (HIGHLIGHT) === */
 .output-div {
   flex: 1; border: none; padding: 15px; font-size: 15px; line-height: 1.6; font-family: inherit;
   white-space: pre-wrap; overflow-y: auto; background-color: #fff; color: #374151; word-wrap: break-word; user-select: text;
